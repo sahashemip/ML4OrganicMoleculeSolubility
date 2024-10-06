@@ -156,3 +156,175 @@ class ChemicalInfoFromSmiles:
                 
             result[descriptor_name] = val
         return result
+
+    @staticmethod
+    def generate_3D_coordinates_from_smiles(smiles: str) -> list:
+        '''
+        Generate 3D coordinates for a molecule from SMILES representation.
+    
+        Parameters:
+        smiles (str): A SMILES string representing the molecule.
+    
+        Returns
+        list: A list of tuples, each containing the atomic symbol
+            and a Point3D object representing the XYZ coordinates of
+            each atom in the molecule.
+        '''
+        mol = ChemicalInfoFromSmiles.get_mol_from_smiles(smiles)    
+        mol = Chem.AddHs(mol)
+
+        AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+        AllChem.UFFOptimizeMolecule(mol)
+
+        conf = mol.GetConformer()
+        xyz_coordinates = [
+            (atom.GetSymbol(), conf.GetAtomPosition(atom.GetIdx()))
+            for atom in mol.GetAtoms()
+        ]
+
+        return xyz_coordinates
+
+    @staticmethod
+    def get_atomic_map_from_smiles_jazzy(smiles: str) -> any:
+        '''
+        Generates an atomic map from a given SMILES string
+            using the MMFF94 minimization method.
+
+        Parameters:
+        smiles (str): A SMILES string representing the molecule.
+
+        Returns:
+        list[dict]: A list where each element is a dictionary containing
+            information about an atom in the molecule.
+            In the case of errors returns "None".
+        '''
+        try:
+            return jazzyAPI.atomic_map_from_smiles(smiles,
+                                              minimisation_method="MMFF94")
+        except:
+            print(f'An error occured for {smiles}')
+            return None
+
+    @staticmethod
+    def get_molecular_vector_from_smiles_jazzy(smiles: str) -> any:
+        '''
+        Generates an atomic map from a given SMILES string
+            using the MMFF94 minimization method.
+
+        Parameters:
+        smiles (str): A SMILES string representing the molecule.
+
+        Returns:
+        list[dict]: A list where each element is a dictionary containing
+            information about an atom in the molecule.
+            In the case of errors returns "None".
+        '''
+        try:
+            return jazzyAPI.molecular_vector_from_smiles(smiles)
+        except:
+            print(f'An error occured for {smiles}')
+            return None
+
+    @staticmethod
+    def get_atomic_masses_from_smiles(smiles: str) -> np.ndarray:
+        '''
+        Extracts atomic masses from a SMILES string.
+
+        Parameters:
+        - smiles (str): A SMILES string representing the molecule.
+
+        Returns:
+        - list[float]: A list of atomic masses (float numbers).
+        '''
+        mol = ChemicalInfoFromSmiles.get_mol_from_smiles(smiles)
+        mol = Chem.AddHs(mol)
+        atoms = mol.GetAtoms()
+        periodic_table = Chem.GetPeriodicTable()
+        atomic_masses = np.array([periodic_table.GetAtomicWeight(
+                            atom.GetAtomicNum()) for atom in atoms])
+        return atomic_masses
+
+    @staticmethod
+    def get_center_of_mass_coordinates(smiles: str) -> np.ndarray:
+        '''
+        Calculates the center of mass coordinates for
+            a molecule given its SMILES string.
+
+        Parameters:
+        - smiles (str): A SMILES string representing the molecule.
+
+        Return:
+        - np.ndarray: An array with 3 elements (float numbers).
+        '''
+        atomic_coordinates = ChemicalInfoFromSmiles.generate_3D_coordinates_from_smiles(smiles)
+        coords = np.array([coord[1] for coord in atomic_coordinates])
+        atomic_masses = ChemicalInfoFromSmiles.get_atomic_masses_from_smiles(smiles)
+
+        total_mass = np.sum(atomic_masses)
+        if total_mass == 0:
+            raise ValueError("Total atomic mass is zero, cannot compute center of mass.")
+        weighted_coords = coords * atomic_masses[:, np.newaxis]
+        
+        return np.sum(weighted_coords, axis=0) / total_mass
+        
+    @staticmethod
+    def transform_coords_to_center_of_mass(smiles: str) -> np.ndarray:
+        '''
+        Transforms atomic coordinates to be relative to the center of mass of the molecule.
+
+        Parameters:
+        - smiles (str): A SMILES string representing the molecule.
+
+        Returns:
+        - A 2D array of transformed atomic coordinates, where each row corresponds to
+            an atom and the columns correspond to x, y, and z coordinates.
+
+        Raises:
+        - ValueError: If the SMILES string is invalid or the atomic coordinates cannot be generated.
+        '''
+        try:
+            atomic_coordinates = ChemicalInfoFromSmiles.generate_3D_coordinates_from_smiles(smiles)
+            coords = np.array([coord[1] for coord in atomic_coordinates])
+
+            center_of_mass = ChemicalInfoFromSmiles.get_center_of_mass_coordinates(smiles)
+            transformed_coords = coords - center_of_mass
+
+            return transformed_coords
+
+        except Exception as e:
+            raise ValueError(f"Failed to transform coordinates for SMILES string '{smiles}': {e}")
+
+    @staticmethod
+    def get_yukawa_potential_from_jazzy(smiles: str,
+                                        atomic_property: str = 'eeq',
+                                        beta: int = 0.01) -> float:
+        '''
+        Computes the Yukawa potential for a given atomic property from a SMILES string
+            using Jazzy's outputs and distances between atomic coordinates.
+        
+        Parameters:
+        - smiles (str): A SMILES string representing a chemical compound.
+        - atomic_property (str): The atomic property to be used in the calculation (default is 'eeq').
+        - beta (float): A parameter controlling the exponential decay (default is 0.01).
+
+        Returns:
+        - float: The calculated Yukawa potential value.
+
+        Raises:
+        - ValueError: If the SMILES string cannot be processed.
+        '''
+        try:
+            jazzy_output = ChemicalInfoFromSmiles.get_atomic_map_from_smiles_jazzy(smiles)
+            atomic_coords = ChemicalInfoFromSmiles.transform_coords_to_center_of_mass(smiles)
+        except Exception as e:
+            raise ValueError(f"Error processing SMILES string: {e}")
+        
+        yukawa_potential = 0.0
+        for i, coord_i in enumerate(atomic_coords):
+            feature_i = jazzy_output[i].get(atomic_property, 0.0)
+
+            for j in range(i + 1, len(atomic_coords)):
+                feature_j = jazzy_output[j].get(atomic_property, 0.0)
+                distance = np.linalg.norm(coord_i - atomic_coords[j])
+                yukawa_potential += feature_i * feature_j * np.exp(-distance * beta)
+        return yukawa_potential
