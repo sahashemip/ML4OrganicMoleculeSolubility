@@ -130,3 +130,29 @@ class ChemicalInfoFromSmiles:
             img_path = Path(f'{dirname}/mol-{idx}.png')
             with img_path.open('wb') as imgfile:
                 img.save(imgfile)
+
+    @staticmethod
+    def get_rdkit_2dDescriptors_from_smiles(smiles: str, missingVal=None) -> dict:
+        '''
+        Calculate 2D molecular descriptors for a given SMILES string using RDKit.
+
+        Parameters:
+        smiles (str): A SMILES string representing the molecule.
+        missingVal (optional): The value to be assigned to a descriptor
+            if its calculation results in a RuntimeError. Defaults to None.
+
+        Returns:
+        dict: A dictionary where keys are descriptor names and values are
+            the calculated descriptor values.
+        '''
+        mol = ChemicalInfoFromSmiles.get_mol_from_smiles(smiles)
+        
+        result = {}
+        for descriptor_name, descriptor_object in Descriptors._descList:
+            try:
+                val = descriptor_object(mol)
+            except RuntimeError:
+                val = missingVal
+                
+            result[descriptor_name] = val
+        return result
