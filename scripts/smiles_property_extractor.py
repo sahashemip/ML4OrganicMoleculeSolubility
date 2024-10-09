@@ -328,3 +328,95 @@ class ChemicalInfoFromSmiles:
                 distance = np.linalg.norm(coord_i - atomic_coords[j])
                 yukawa_potential += feature_i * feature_j * np.exp(-distance * beta)
         return yukawa_potential
+
+class Fingerprint:
+    '''
+    Class containing methods to generate Extended Connectivity Fingerprint "ECFP" from SMILES strings.
+    '''
+    def __init__(self,
+                 data: pd.DataFrame,
+                 data_path: str,
+                 is_numbering_fragments: bool = False):
+        assert isinstance(data, pd.DataFrame), "data must be a pandas DataFrame"
+        assert 'SMILES' in data.columns, "data must contain a 'SMILES' column"
+        self.data = data
+        self.data_path = data_path
+        self.is_numbering_fragments = is_numbering_fragments
+
+    def generate_ecfp(self,
+                      nbits: int = 1024,
+                      diameter: int = 4):
+        self.fingerprints = np.zeros((self.data.shape[0], nbits))
+        smiles = self.data['SMILES'].to_numpy()
+        submol_smiles = [[] for _ in range(nbits)]
+
+        for i, smi in enumerate(tqdm(enumerate(smiles), total=len(smiles), desc="Processing fingerprints")):
+            mol = Chem.MolFromSmiles(smi[1])
+            bitinfo = {}
+            fp = AllChem.GetMorganFingerprintAsBitVect(
+                mol, diameter // 2, nBits=nbits, bitInfo=bitinfo, useChirality=True
+            )
+            self.fingerprints[i] = np.array(fp)
+            self._process_bitinfo(i, mol, bitinfo, submol_smiles)
+
+        self.subsmiles = self._extract_unique_subsmiles(submol_smiles, nbits)
+        self._save_results()
+
+    def _process_bitinfo(self, indx, mol, bitinfo, submol_smiles):
+        for bit, info in bitinfo.items():
+            atom, radius = info[0]
+            if self.is_numbering_fragments:
+                freq = len(bitinfo[bit])
+                self.fingerprints[indx][bit] = freq
+
+            atoms, env = self._get_atom_environment(mol, atom, radius)
+            frag_smiles = self._get_fragment_smiles(mol, atoms, env, atom)
+            submol_smiles[bit].append(frag_smiles)
+
+    @staticmethod
+    def _get_atom_environment(mol, atom, radius):
+        if radius > 0:
+            env = Chem.FindAtomEnvironmentOfRadiusN(mol, radius, atom)
+            atoms = set(
+                mol.GetBondWithIdx(b).GetBeginAtomIdx() for b in env
+            ).union(
+                mol.GetBondWithIdx(b).GetEndAtomIdx() for b in env
+            )
+        else:
+            atoms, env = [atom], None
+        return list(atoms), env
+
+    @staticmethod
+    def _get_fragment_smiles(mol, atoms, env, atom):
+        return Chem.MolFragmentToSmiles(
+            mol, atoms, bondsToUse=env, allHsExplicit=True,
+            allBondsExplicit=True, rootedAtAtom=atom, isomericSmiles=False
+        )
+
+    @staticmethod
+    def _extract_unique_subsmiles(submol_smiles, nbits):
+        subsmiles = ['NaN'] * nbits
+        for i in range(nbits):
+            unique_subsmiles, pos_subsmiles = np.unique(
+                submol_smiles[i], return_inverse=True
+            )
+            if unique_subsmiles.size > 0:
+                subsmiles[i] = unique_subsmiles[np.argmax(np.bincount(pos_subsmiles))]
+        return subsmiles
+
+    def _save_results(self):
+        if self.is_numbering_fragments:
+            submolecules_name = 'wecfp-submolecules.csv'
+            fingerprint_name = 'wecfp-fingerprints.csv'
+        else:
+            submolecules_name = 'submolecules'
+            fingerprint_name = 'fingerprints.csv'
+            
+        with open(f'{self.data_path}/{submolecules_name}', 'w') as f:
+            pd.DataFrame(
+                {'Bit': np.arange(len(self.subsmiles)), 'SMILES': self.subsmiles}
+            ).to_csv(f, index=False)
+
+        with open(f'{self.data_path}/{fingerprint_name}', 'w') as f:
+            pd.DataFrame(self.fingerprints).to_csv(f, index=False)
+
