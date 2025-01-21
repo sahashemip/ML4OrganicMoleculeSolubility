@@ -51,9 +51,8 @@ The water solubility of organic molecules is critical for optimizing the perform
 
 ---
 
-## Related Work
-For further details, please refer to the associated publication:  
-[DOI Placeholder]()
+## Related Scientific Work
+For further details [Click here](https://chemrxiv.org/engage/chemrxiv/article-details/67851a75fa469535b9ceafbd)!
 
 ---
 
