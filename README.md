@@ -1,6 +1,4 @@
 # ML4OrganicMoleculeSolubility
-
-
 ![GitHub All Releases](https://img.shields.io/github/downloads/sahashemip/ML4OrganicMoleculeSolubility/total)
 
 **Machine Learning for Predicting Solubility**
