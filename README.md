@@ -1,4 +1,8 @@
 # ML4OrganicMoleculeSolubility
+
+
+![GitHub All Releases](https://img.shields.io/github/downloads/sahashemip/ML4OrganicMoleculeSolubility/total)
+
 **Machine Learning for Predicting Solubility**
 
 The water solubility of organic molecules is critical for optimizing the performance and stability of aqueous flow batteries, as well as for various other applications. While solubility measurements are relatively straightforward in some cases, theoretical predictions remain a significant challenge. Machine learning algorithms have become invaluable tools over the past decade to address this. High-quality data and effective descriptors are essential for building reliable, data-driven estimation models. This repository systematically investigates the effectiveness of enhanced structure-based descriptors and an outlier detection procedure to improve aqueous solubility predictability.
